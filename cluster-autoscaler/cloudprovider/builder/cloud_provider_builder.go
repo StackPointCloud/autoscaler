@@ -24,6 +24,7 @@ import (
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/azure"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/gce"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/kubemark"
+	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/spc"
 	"k8s.io/client-go/informers"
 	kubeclient "k8s.io/client-go/kubernetes"
 	"k8s.io/client-go/rest"
@@ -135,6 +136,17 @@ func (b CloudProviderBuilder) Build(discoveryOpts cloudprovider.NodeGroupDiscove
 		if err != nil {
 			glog.Fatalf("Failed to create Azure cloud provider: %v", err)
 		}
+		
+	if b.cloudProviderFlag == "spc" {
+		spcClient, spcError := spc.CreateClusterClient()
+		if spcError != nil {
+			glog.Fatalf("Failed to create SPC client: %v", spcError)
+		}
+		cloudProvider, err = spc.BuildSpcCloudProvider(spcClient, nodeGroupsFlag, resourceLimiter) // replace or remove nodeGroupsFlag
+		if err != nil {
+			glog.Fatalf("Failed to create stackpointio cloud provider: %v", err)
+		}
+		glog.V(5).Infof("Started stackpointio autoscaler: %s", cloudProvider.Name())
 	}
 
 	if b.cloudProviderFlag == kubemark.ProviderName {

@@ -248,6 +248,7 @@ func run(healthCheck *metrics.HealthCheck) {
 	if err != nil {
 		glog.Fatalf("Failed to create autoscaler: %v", err)
 	}
+	glog.V(5).Infof("Created autoscaler %v", autoscaler.CloudProvider().Name())
 	autoscaler.CleanUp()
 	registerSignalHandlers(autoscaler)
 	healthCheck.StartMonitoring()

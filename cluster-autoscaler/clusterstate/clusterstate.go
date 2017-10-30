@@ -584,10 +584,11 @@ func (csr *ClusterStateRegistry) updateIncorrectNodeGroupSizes(currentTime time.
 func (csr *ClusterStateRegistry) updateUnregisteredNodes(unregisteredNodes []UnregisteredNode) {
 	result := make(map[string]UnregisteredNode)
 	for _, unregistered := range unregisteredNodes {
-		if prev, found := csr.unregisteredNodes[unregistered.Node.Name]; found {
-			result[unregistered.Node.Name] = prev
+		registerName := GetRegistrationName(unregistered.Node)
+		if prev, found := csr.unregisteredNodes[registerName]; found {
+			result[registerName] = prev
 		} else {
-			result[unregistered.Node.Name] = unregistered
+			result[registerName] = unregistered
 		}
 	}
 	csr.unregisteredNodes = result
@@ -884,11 +885,23 @@ func (csr *ClusterStateRegistry) GetUpcomingNodes() map[string]int {
 	return result
 }
 
+// returns a registration name for a kubernetes node, equal to the ProviderID
+// if defined, and the node name otherwise
+func GetRegistrationName(node *apiv1.Node) string {
+	registrationName := node.Spec.ProviderID
+	if registrationName == "" {
+		registrationName = node.GetName()
+	}
+	return registrationName
+}
+
 // Calculates which of the existing cloud provider nodes are not registered in Kubernetes.
+// Does this by comparing the node.Spec.ProviderID with the name in the nodeGroup.Nodes() list
+// thereby requiring that those two strings be identical
 func getNotRegisteredNodes(allNodes []*apiv1.Node, cloudProvider cloudprovider.CloudProvider, time time.Time) ([]UnregisteredNode, error) {
 	registered := sets.NewString()
 	for _, node := range allNodes {
-		registered.Insert(node.Spec.ProviderID)
+		registered.Insert(GetRegistrationName(node))
 	}
 	notRegistered := make([]UnregisteredNode, 0)
 	for _, nodeGroup := range cloudProvider.NodeGroups() {
@@ -897,7 +910,10 @@ func getNotRegisteredNodes(allNodes []*apiv1.Node, cloudProvider cloudprovider.C
 			return []UnregisteredNode{}, err
 		}
 		for _, node := range nodes {
+			glog.V(5).Infof("Checking registration of node name %s", node)
 			if !registered.Has(node) {
+				glog.V(5).Infof("Not registered: %s", node)
+
 				notRegistered = append(notRegistered, UnregisteredNode{
 					Node: &apiv1.Node{
 						ObjectMeta: metav1.ObjectMeta{

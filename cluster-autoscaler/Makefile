@@ -13,7 +13,7 @@ build: clean deps
 	$(ENVVAR) GOOS=$(GOOS) godep go build -o cluster-autoscaler
 
 build-binary: clean deps
-	$(ENVVAR) GOOS=$(GOOS) godep go build -o cluster-autoscaler
+	$(ENVVAR) GOOS=$(GOOS) godep go build -i -v -o cluster-autoscaler
 
 test-unit: clean deps build
 	$(ENVVAR) godep go test --test.short -race ./... $(FLAGS)
@@ -43,13 +43,21 @@ docker-builder:
 	docker build -t autoscaling-builder ../builder
 
 build-in-docker: clean docker-builder
-	docker run -v `pwd`:/gopath/src/k8s.io/autoscaler/cluster-autoscaler/ autoscaling-builder:latest bash -c 'cd /gopath/src/k8s.io/autoscaler/cluster-autoscaler && make build-binary'
+	docker run \
+	-v `pwd`:/gopath/src/k8s.io/autoscaler/cluster-autoscaler/ \
+	-v $(GOPATH)/pkg:/gopath/pkg \
+	autoscaling-builder:latest \
+	bash -c 'cd /gopath/src/k8s.io/autoscaler/cluster-autoscaler && make build-binary'
 
 release: build-in-docker execute-release
 	echo "Full in-docker release ${TAG} completed"
 
 test-in-docker: clean docker-builder
-	docker run -v `pwd`:/gopath/src/k8s.io/autoscaler/cluster-autoscaler/ autoscaling-builder:latest bash -c 'cd /gopath/src/k8s.io/autoscaler/cluster-autoscaler && godep go test ./... '
+	docker run \
+	-v `pwd`:/gopath/src/k8s.io/autoscaler/cluster-autoscaler/ \
+	-v $(GOPATH)/pkg:/gopath/pkg \
+	autoscaling-builder:latest \
+	bash -c 'cd /gopath/src/k8s.io/autoscaler/cluster-autoscaler && godep go test ./... '
 
 .PHONY: all deps build test-unit clean format execute-release dev-release docker-builder build-in-docker release generate
 

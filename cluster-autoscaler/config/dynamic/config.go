@@ -19,6 +19,7 @@ package dynamic
 import (
 	"encoding/json"
 	"fmt"
+
 	"github.com/golang/glog"
 	"k8s.io/api/core/v1"
 )
@@ -49,7 +50,7 @@ func ConfigFromConfigMap(configmap *v1.ConfigMap) (*Config, error) {
 	settingsInJson := configmap.Data["settings"]
 
 	if settingsInJson == "" {
-		return nil, fmt.Errorf(`invalid format of configmap: missing the key named "nodeGroups" in config = %v`, settingsInJson)
+		return nil, fmt.Errorf(`invalid format of configmap: missing the key named "settings" in config = %v`, settingsInJson)
 	}
 
 	settings := Settings{}

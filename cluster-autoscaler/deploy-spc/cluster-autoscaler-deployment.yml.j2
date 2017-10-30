@@ -1,0 +1,74 @@
+apiVersion: extensions/v1beta1
+kind: Deployment
+metadata:
+  labels:
+    run: spc-autoscaler
+  name: spc-autoscaler
+  selfLink: /apis/extensions/v1beta1/namespaces/deployments/spc-autoscaler
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      run: spc-autoscaler
+  strategy:
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 1
+    type: RollingUpdate
+  template:
+    metadata:
+      creationTimestamp: null
+      labels:
+        run: spc-autoscaler
+    spec:
+      containers:
+      - args:
+          - /cluster-autoscaler
+          - --v=6
+          - --logtostderr=true
+          - --cloud-provider=spc
+          - --scan-interval=10s
+          - --scale-down-delay-after-add=60s
+        env:
+        - name: CLUSTER_API_TOKEN
+          valueFrom:
+            secretKeyRef:
+              key: api-token
+              name: stackpointio
+        - name: SPC_API_BASE_URL
+          valueFrom:
+            secretKeyRef:
+              key: api-url
+              name: stackpointio
+        - name: ORGANIZATION_ID
+          valueFrom:
+            secretKeyRef:
+              key: organization-id
+              name: stackpointio
+        - name: CLUSTER_ID
+          valueFrom:
+            secretKeyRef:
+              key: cluster-id
+              name: stackpointio
+        image: quay.io/stackpoint/stackpointio-cluster-autoscaler:4f6b044a-m
+        imagePullPolicy: Always
+        name: spc-autoscaler
+        ports:
+        - containerPort: 8085
+          name: metrics
+          protocol: TCP
+        resources:
+          requests:
+            cpu: "100m"
+        terminationMessagePath: /dev/termination-log
+      dnsPolicy: ClusterFirst
+      nodeSelector:
+        node-role.kubernetes.io/master: ""
+      restartPolicy: Always
+      securityContext: {}
+      terminationGracePeriodSeconds: 30
+      tolerations:
+      - effect: NoSchedule
+        key: node-role.kubernetes.io/master
+        operator: Exists
+status: {}
