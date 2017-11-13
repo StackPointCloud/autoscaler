@@ -19,6 +19,7 @@ spec:
     metadata:
       creationTimestamp: null
       labels:
+        metrics: enabled
         run: spc-autoscaler
     spec:
       containers:
@@ -50,7 +51,7 @@ spec:
             secretKeyRef:
               key: cluster-id
               name: stackpointio
-        image: quay.io/stackpoint/stackpointio-cluster-autoscaler:4f6b044a-m
+        image: quay.io/stackpoint/stackpointio-cluster-autoscaler:f81b1f24-q
         imagePullPolicy: Always
         name: spc-autoscaler
         ports:

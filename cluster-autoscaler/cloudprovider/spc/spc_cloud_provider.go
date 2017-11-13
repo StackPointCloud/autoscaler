@@ -47,7 +47,8 @@ type NodeClass struct {
 
 // NodeGroup implements NodeGroup
 type NodeGroup struct {
-	id      string
+	name    string
+	ID      int
 	Class   NodeClass
 	maxSize int
 	minSize int
@@ -57,7 +58,8 @@ type NodeGroup struct {
 // NewSpcNodeGroup creates a new node group from a stackpoint.io NodePool
 func NewSpcNodeGroup(prefix string, nodepool stackpointio.NodePool, manager *NodeManager) *NodeGroup {
 	return &NodeGroup{
-		id: prefix + nodepool.InstanceID,
+		name: prefix + nodepool.InstanceID,
+		ID:   nodepool.PrimaryKey,
 		Class: NodeClass{
 			Type:     nodepool.Size,
 			CPU:      nodepool.CPU,
@@ -94,7 +96,7 @@ func (sng NodeGroup) TargetSize() (int, error) {
 // to explicitly name it and use DeleteNode. This function should wait until
 // node group size is updated.
 func (sng NodeGroup) IncreaseSize(delta int) error {
-	_, err := sng.manager.IncreaseSize(delta, sng.Class.Type, sng.Id())
+	_, err := sng.manager.IncreaseSize(delta, sng.Class.Type, &sng)
 	return err
 }
 
@@ -228,7 +230,7 @@ func (sng NodeGroup) Autoprovisioned() bool {
 
 // Id returns an unique identifier of the node group.
 func (sng NodeGroup) Id() string {
-	return sng.id
+	return sng.name
 }
 
 // Debug returns a string containing all information regarding this node group.

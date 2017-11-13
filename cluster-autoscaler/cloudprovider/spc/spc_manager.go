@@ -73,8 +73,8 @@ func (cClient *StackpointClusterClient) getNodePools() ([]stackpointio.NodePool,
 	return cClient.apiClient.GetNodePools(cClient.organization, cClient.id)
 }
 
-func (cClient *StackpointClusterClient) addNodes(requestNodes stackpointio.NodeAdd) ([]stackpointio.Node, error) {
-	newNodes, err := cClient.apiClient.AddNodes(cClient.organization, cClient.id, requestNodes)
+func (cClient *StackpointClusterClient) addNodes(nodePoolID int, requestNodes stackpointio.NodeAdd) ([]stackpointio.Node, error) {
+	newNodes, err := cClient.apiClient.AddNodesToNodePool(cClient.organization, cClient.id, nodePoolID, requestNodes)
 	if err != nil {
 		return nil, err // make([]stackpointio.Node, 0), err
 	}
@@ -190,10 +190,10 @@ func (manager *NodeManager) Refresh() error {
 	if groupErr != nil {
 		return groupErr
 	}
-	nodeErr := manager.updateNodes()
-	if nodeErr != nil {
-		return nodeErr
-	}
+	// nodeErr := manager.updateNodes()
+	// if nodeErr != nil {
+	// 	return nodeErr
+	// }
 	return nil
 }
 
@@ -232,7 +232,12 @@ func (manager *NodeManager) updateNodes() error {
 	return nil
 }
 
-// updateNodeGroups retrieves node group definitions from stackpointio and synchronizes the local definitions
+func getPoolInstanceIDName(clusterNode stackpointio.Node) string {
+	prefix := "autoscaling-"
+	return strings.TrimPrefix(clusterNode.Group, prefix)
+}
+
+// updateNodeGroups retrieves node group definitions from stackpointio and synchronizes the local node definitions
 func (manager *NodeManager) updateNodeGroups() error {
 
 	prefix := "autoscaling-"
@@ -241,66 +246,63 @@ func (manager *NodeManager) updateNodeGroups() error {
 	if err != nil {
 		return fmt.Errorf("Cannot retrieve nodepool definitions, %v", err)
 	}
+
+	remoteAutoscaledGroups := make(map[string]*NodeGroup)
 	for _, pool := range spcNodePools {
-
 		if pool.Autoscaled {
-			manager.nodeGroups[pool.InstanceID] = NewSpcNodeGroup(prefix, pool, manager)
+			remoteAutoscaledGroups[pool.InstanceID] = NewSpcNodeGroup(prefix, pool, manager)
 			glog.V(2).Infof("Updating autoscaled node group %s", pool.InstanceID)
-
-		} else if pool.Default {
-
-			// XXX
-			// fake it for initial testing purposes
-			pool.Autoscaled = true
-			pool.MaxCount = 2
-			pool.MinCount = 2
-
-			manager.nodeGroups[pool.InstanceID] = NewSpcNodeGroup(prefix, pool, manager)
-
-			glog.V(2).Infof("Updating default node group %s", pool.InstanceID)
 		}
 	}
-	// XXX remove
-	newpool := &NodeGroup{
-		id: "autoscaling-testing",
-		Class: NodeClass{
-			Type:     "2gb",
-			CPU:      "2",
-			MemoryMB: "2000",
-		},
-		maxSize: 3,
-		minSize: 0,
-		manager: manager,
+	manager.nodeGroups = remoteAutoscaledGroups
+
+	allClusterNodes, err := manager.clusterClient.getNodes()
+	if err != nil {
+		return err
 	}
-	manager.nodeGroups["autoscaling-testing"] = newpool
+	remoteAutoscaledNodes := make(map[string]stackpointio.Node)
+	for _, clusterNode := range allClusterNodes {
+		poolInstanceID := getPoolInstanceIDName(clusterNode)
+		if poolInstanceID != "" && manager.nodeGroups[poolInstanceID] != nil {
+			localNode, ok := manager.nodes[clusterNode.InstanceID]
+			if ok {
+				if localNode.State != clusterNode.State {
+					glog.V(5).Infof("Node state change, nodeID %s, oldState %s, newState %s", clusterNode.InstanceID, localNode.State, clusterNode.State)
+				}
+			} else {
+				glog.V(5).Infof("New node found, nodeID %s, newState %s", clusterNode.InstanceID, clusterNode.State)
+			}
+			remoteAutoscaledNodes[clusterNode.InstanceID] = clusterNode
+		}
+	}
+	manager.nodes = remoteAutoscaledNodes
 
 	return nil
 }
 
 // IncreaseSize adds nodes to the manager and to the cluster, waits until
 // the addition is complete.  Returns the count of running nodes.
-func (manager *NodeManager) IncreaseSize(additional int, nodeType string, groupName string) (int, error) {
+func (manager *NodeManager) IncreaseSize(additional int, nodeType string, pool *NodeGroup) (int, error) {
 
 	// TODO propose: the polling and waiting should be part of the NodeGroup method.  The manager should request and return,
 	// letting the NodeGroup itself handle the unready state of the node
 
 	manager.Refresh()
-	states := manager.countStates()
 
 	requestNodes := stackpointio.NodeAdd{
-		Size:  nodeType,
-		Count: additional,
-		Group: groupName,
+		Size:       nodeType,
+		Count:      additional,
+		NodePoolID: pool.ID,
 	}
 
-	newNodes, err := manager.clusterClient.addNodes(requestNodes)
+	newNodes, err := manager.clusterClient.addNodes(pool.ID, requestNodes)
 	if err != nil {
 		return 0, err
 	}
 	for _, node := range newNodes {
 		glog.V(5).Infof("AddNodes response {instance_id: %s, state: %s}", node.InstanceID, node.State)
-		if node.Group != requestNodes.Group {
-			glog.Errorf("AddNodes instance_id: %s is in group [%s] not group [%s]", node.InstanceID, node.Group, groupName)
+		if node.Group != pool.name {
+			glog.Errorf("AddNodes instance_id: %s is in group [%s] not group [%s]", node.InstanceID, node.Group, pool.name)
 		}
 	}
 
@@ -335,6 +337,7 @@ updateLoop:
 			}
 		}
 	}
+	states := manager.countStates()
 	return (*states)["running"], errorResult
 }
 
