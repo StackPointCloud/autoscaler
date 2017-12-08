@@ -73,6 +73,10 @@ func (cClient *StackpointClusterClient) getNodePools() ([]stackpointio.NodePool,
 	return cClient.apiClient.GetNodePools(cClient.organization, cClient.id)
 }
 
+func (cClient *StackpointClusterClient) getNodePool(nodePoolID int) (stackpointio.NodePool, error) {
+	return cClient.apiClient.GetNodePool(cClient.organization, cClient.id, nodePoolID)
+}
+
 func (cClient *StackpointClusterClient) addNodes(nodePoolID int, requestNodes stackpointio.NodeAdd) ([]stackpointio.Node, error) {
 	newNodes, err := cClient.apiClient.AddNodesToNodePool(cClient.organization, cClient.id, nodePoolID, requestNodes)
 	if err != nil {
@@ -178,6 +182,7 @@ func (manager *NodeManager) GetNodePK(nodePK int) (stackpointio.Node, bool) {
 	return stackpointio.Node{}, false
 }
 
+// Refresh updates the set of nodegroups and nodes from the stackpointcloud api
 func (manager *NodeManager) Refresh() error {
 	timepoint := time.Now()
 	if timepoint.Sub(manager.lastAPIRequestTime) < manager.apiRequestInterval {
@@ -292,17 +297,17 @@ func (manager *NodeManager) IncreaseSize(additional int, nodeType string, pool *
 	requestNodes := stackpointio.NodeAdd{
 		Size:       nodeType,
 		Count:      additional,
-		NodePoolID: pool.ID,
+		NodePoolID: pool.stackpointID,
 	}
 
-	newNodes, err := manager.clusterClient.addNodes(pool.ID, requestNodes)
+	newNodes, err := manager.clusterClient.addNodes(pool.stackpointID, requestNodes)
 	if err != nil {
 		return 0, err
 	}
 	for _, node := range newNodes {
 		glog.V(5).Infof("AddNodes response {instance_id: %s, state: %s}", node.InstanceID, node.State)
-		if node.Group != pool.name {
-			glog.Errorf("AddNodes instance_id: %s is in group [%s] not group [%s]", node.InstanceID, node.Group, pool.name)
+		if node.Group != pool.id {
+			glog.Errorf("AddNodes instance_id: %s is in group [%s] not group [%s]", node.InstanceID, node.Group, pool.id)
 		}
 	}
 

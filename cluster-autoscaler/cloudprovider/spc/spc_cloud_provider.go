@@ -47,20 +47,20 @@ type NodeClass struct {
 
 // NodeGroup implements NodeGroup
 type NodeGroup struct {
-	name    string
-	ID      int
-	Class   NodeClass
-	maxSize int
-	minSize int
-	manager *NodeManager
+	id           string
+	stackpointID int
+	class        NodeClass
+	maxSize      int
+	minSize      int
+	manager      *NodeManager
 }
 
 // NewSpcNodeGroup creates a new node group from a stackpoint.io NodePool
 func NewSpcNodeGroup(prefix string, nodepool stackpointio.NodePool, manager *NodeManager) *NodeGroup {
 	return &NodeGroup{
-		name: prefix + nodepool.InstanceID,
-		ID:   nodepool.PrimaryKey,
-		Class: NodeClass{
+		id:           prefix + nodepool.InstanceID,
+		stackpointID: nodepool.PrimaryKey,
+		class: NodeClass{
 			Type:     nodepool.Size,
 			CPU:      nodepool.CPU,
 			MemoryMB: nodepool.Memory,
@@ -96,7 +96,7 @@ func (sng NodeGroup) TargetSize() (int, error) {
 // to explicitly name it and use DeleteNode. This function should wait until
 // node group size is updated.
 func (sng NodeGroup) IncreaseSize(delta int) error {
-	_, err := sng.manager.IncreaseSize(delta, sng.Class.Type, &sng)
+	_, err := sng.manager.IncreaseSize(delta, sng.class.Type, &sng)
 	return err
 }
 
@@ -172,9 +172,9 @@ func (sng NodeGroup) TemplateNodeInfo() (*schedulercache.NodeInfo, error) {
 		Labels:   map[string]string{},
 	}
 
-	if sng.Class.CPU != "" && sng.Class.MemoryMB != "" {
-		cpu, err1 := strconv.ParseInt(sng.Class.CPU, 10, 64)
-		memoryMB, err2 := strconv.ParseInt(sng.Class.MemoryMB, 10, 64)
+	if sng.class.CPU != "" && sng.class.MemoryMB != "" {
+		cpu, err1 := strconv.ParseInt(sng.class.CPU, 10, 64)
+		memoryMB, err2 := strconv.ParseInt(sng.class.MemoryMB, 10, 64)
 		if err1 == nil && err2 == nil {
 			capacity := apiv1.ResourceList{}
 			capacity[apiv1.ResourcePods] = *resource.NewQuantity(110, resource.DecimalSI)
@@ -207,7 +207,14 @@ func (sng NodeGroup) TemplateNodeInfo() (*schedulercache.NodeInfo, error) {
 // Exist checks if the node group really exists on the cloud provider side. Allows to tell the
 // theoretical node group from the real one. Implementation required.
 func (sng NodeGroup) Exist() bool {
-	return true
+	// nodegroups are refreshed regularly, so if it has a remote id, it should be real without requiring a remote call
+	return sng.stackpointID != 0
+
+	// _, err := sng.manager.clusterClient.getNodePool(sng.ID)
+	// if err != nil {
+	// 	return false
+	// }
+	// return true
 }
 
 // Create creates the node group on the cloud provider side. Implementation optional.
@@ -230,7 +237,7 @@ func (sng NodeGroup) Autoprovisioned() bool {
 
 // Id returns an unique identifier of the node group.
 func (sng NodeGroup) Id() string {
-	return sng.name
+	return sng.id
 }
 
 // Debug returns a string containing all information regarding this node group.
@@ -240,7 +247,7 @@ func (sng NodeGroup) Debug() string {
 	if err != nil {
 		msg = err.Error()
 	}
-	return fmt.Sprintf("%s (%d:%d) (%d) %s", sng.Id(), sng.MinSize(), sng.MaxSize(), target, msg)
+	return fmt.Sprintf("%s [%s] (%d:%d) (%d) %s", sng.Id(), sng.stackpointID, sng.MinSize(), sng.MaxSize(), target, msg)
 }
 
 // Nodes returns a list of all nodes that belong to this node group.
