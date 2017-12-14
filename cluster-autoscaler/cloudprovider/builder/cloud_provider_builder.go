@@ -40,15 +40,17 @@ type CloudProviderBuilder struct {
 	cloudProviderFlag       string
 	cloudConfig             string
 	clusterName             string
+	configNamespace         string
 	autoprovisioningEnabled bool
 }
 
 // NewCloudProviderBuilder builds a new builder from static settings
-func NewCloudProviderBuilder(cloudProviderFlag string, cloudConfig string, clusterName string, autoprovisioningEnabled bool) CloudProviderBuilder {
+func NewCloudProviderBuilder(cloudProviderFlag string, cloudConfig string, clusterName, configNamespace string, autoprovisioningEnabled bool) CloudProviderBuilder {
 	return CloudProviderBuilder{
 		cloudProviderFlag:       cloudProviderFlag,
 		cloudConfig:             cloudConfig,
 		clusterName:             clusterName,
+		configNamespace:         configNamespace,
 		autoprovisioningEnabled: autoprovisioningEnabled,
 	}
 }
@@ -60,7 +62,9 @@ func (b CloudProviderBuilder) Build(discoveryOpts cloudprovider.NodeGroupDiscove
 
 	nodeGroupsFlag := discoveryOpts.NodeGroupSpecs
 
-	if b.cloudProviderFlag == "gce" || b.cloudProviderFlag == "gke" {
+	switch b.cloudProviderFlag {
+
+	case "gce", "gke":
 		// GCE Manager
 		var gceManager gce.GceManager
 		var gceError error
@@ -90,9 +94,8 @@ func (b CloudProviderBuilder) Build(discoveryOpts cloudprovider.NodeGroupDiscove
 		if err != nil {
 			glog.Fatalf("Failed to create GCE cloud provider: %v", err)
 		}
-	}
 
-	if b.cloudProviderFlag == "aws" {
+	case "aws":
 		var awsManager *aws.AwsManager
 		var awsError error
 		if b.cloudConfig != "" {
@@ -112,9 +115,8 @@ func (b CloudProviderBuilder) Build(discoveryOpts cloudprovider.NodeGroupDiscove
 		if err != nil {
 			glog.Fatalf("Failed to create AWS cloud provider: %v", err)
 		}
-	}
 
-	if b.cloudProviderFlag == "azure" {
+	case "azure":
 		var azureManager *azure.AzureManager
 		var azureError error
 		if b.cloudConfig != "" {
@@ -136,20 +138,19 @@ func (b CloudProviderBuilder) Build(discoveryOpts cloudprovider.NodeGroupDiscove
 		if err != nil {
 			glog.Fatalf("Failed to create Azure cloud provider: %v", err)
 		}
-		
-	if b.cloudProviderFlag == "spc" {
+
+	case "spc":
 		spcClient, spcError := spc.CreateClusterClient()
 		if spcError != nil {
 			glog.Fatalf("Failed to create SPC client: %v", spcError)
 		}
-		cloudProvider, err = spc.BuildSpcCloudProvider(spcClient, nodeGroupsFlag, resourceLimiter) // replace or remove nodeGroupsFlag
+		cloudProvider, err = spc.BuildSpcCloudProvider(spcClient, b.configNamespace, nodeGroupsFlag, resourceLimiter)
 		if err != nil {
 			glog.Fatalf("Failed to create stackpointio cloud provider: %v", err)
 		}
 		glog.V(5).Infof("Started stackpointio autoscaler: %s", cloudProvider.Name())
-	}
 
-	if b.cloudProviderFlag == kubemark.ProviderName {
+	case kubemark.ProviderName:
 		glog.V(1).Infof("Building kubemark cloud provider.")
 		externalConfig, err := rest.InClusterConfig()
 		if err != nil {
@@ -187,6 +188,10 @@ func (b CloudProviderBuilder) Build(discoveryOpts cloudprovider.NodeGroupDiscove
 		if err != nil {
 			glog.Fatalf("Failed to create Kubemark cloud provider: %v", err)
 		}
+
+	default:
+		glog.Fatalf("Failed to create cloud provider for flag: %v", b.cloudProviderFlag)
+
 	}
 
 	return cloudProvider

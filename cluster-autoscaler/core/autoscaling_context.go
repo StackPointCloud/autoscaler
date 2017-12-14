@@ -19,6 +19,7 @@ package core
 import (
 	"time"
 
+	"github.com/golang/glog"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider"
 	"k8s.io/autoscaler/cluster-autoscaler/cloudprovider/builder"
 	"k8s.io/autoscaler/cluster-autoscaler/clusterstate"
@@ -139,7 +140,7 @@ func NewAutoscalingContext(options AutoscalingOptions, predicateChecker *simulat
 	kubeClient kube_client.Interface, kubeEventRecorder kube_record.EventRecorder,
 	logEventRecorder *utils.LogEventRecorder, listerRegistry kube_util.ListerRegistry) (*AutoscalingContext, errors.AutoscalerError) {
 
-	cloudProviderBuilder := builder.NewCloudProviderBuilder(options.CloudProviderName, options.CloudConfig, options.ClusterName, options.NodeAutoprovisioningEnabled)
+	cloudProviderBuilder := builder.NewCloudProviderBuilder(options.CloudProviderName, options.CloudConfig, options.ClusterName, options.ConfigNamespace, options.NodeAutoprovisioningEnabled)
 	cloudProvider := cloudProviderBuilder.Build(cloudprovider.NodeGroupDiscoveryOptions{
 		NodeGroupSpecs:             options.NodeGroups,
 		NodeGroupAutoDiscoverySpec: options.NodeGroupAutoDiscovery},
@@ -170,5 +171,6 @@ func NewAutoscalingContext(options AutoscalingOptions, predicateChecker *simulat
 		LogRecorder:          logEventRecorder,
 	}
 
+	glog.V(4).Infof("Built autoscaling context for %s", autoscalingContext.CloudProvider.Name())
 	return &autoscalingContext, nil
 }

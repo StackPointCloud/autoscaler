@@ -1,11 +1,14 @@
 package spc
 
 import (
+	"encoding/json"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
 	"time"
+
+	meta_v1 "k8s.io/apimachinery/pkg/apis/meta/v1"
 
 	"github.com/StackPointCloud/stackpoint-sdk-go/pkg/stackpointio"
 	"k8s.io/client-go/kubernetes"
@@ -17,6 +20,7 @@ const (
 	spcAPIRequestLimit     time.Duration = 60 * time.Second
 	scalingPollingInterval time.Duration = 60 * time.Second
 	scalingTimeout         time.Duration = 20 * time.Minute
+	nodePoolConfigName     string        = "stackpoint-node-pools"
 )
 
 // StackpointClusterClient is a StackPointCloud API client for a particular cluster
@@ -80,9 +84,8 @@ func (cClient *StackpointClusterClient) getNodePool(nodePoolID int) (stackpointi
 func (cClient *StackpointClusterClient) addNodes(nodePoolID int, requestNodes stackpointio.NodeAdd) ([]stackpointio.Node, error) {
 	newNodes, err := cClient.apiClient.AddNodesToNodePool(cClient.organization, cClient.id, nodePoolID, requestNodes)
 	if err != nil {
-		return nil, err // make([]stackpointio.Node, 0), err
+		return nil, err
 	}
-
 	return newNodes, nil
 }
 
@@ -98,6 +101,7 @@ func (cClient *StackpointClusterClient) deleteNode(nodePK int) ([]byte, error) {
 type NodeManager struct {
 	clusterClient      *StackpointClusterClient
 	k8sClient          *kubernetes.Clientset
+	configNamespace    string
 	nodes              map[string]stackpointio.Node
 	nodeGroups         map[string]*NodeGroup
 	apiRequestInterval time.Duration
@@ -105,10 +109,11 @@ type NodeManager struct {
 }
 
 // CreateNodeManager creates a NodeManager
-func CreateNodeManager(cluster *StackpointClusterClient, k8sClient *kubernetes.Clientset) NodeManager {
+func CreateNodeManager(cluster *StackpointClusterClient, k8sClient *kubernetes.Clientset, configNamespace string) NodeManager {
 	manager := NodeManager{
 		clusterClient:      cluster,
 		k8sClient:          k8sClient,
+		configNamespace:    configNamespace,
 		nodes:              make(map[string]stackpointio.Node, 0),
 		nodeGroups:         make(map[string]*NodeGroup, 0),
 		apiRequestInterval: spcAPIRequestLimit,
@@ -247,7 +252,7 @@ func (manager *NodeManager) updateNodeGroups() error {
 
 	prefix := "autoscaling-"
 
-	spcNodePools, err := manager.clusterClient.getNodePools()
+	spcNodePools, err := manager.getStackpointNodePools()
 	if err != nil {
 		return fmt.Errorf("Cannot retrieve nodepool definitions, %v", err)
 	}
@@ -260,29 +265,51 @@ func (manager *NodeManager) updateNodeGroups() error {
 		}
 	}
 	manager.nodeGroups = remoteAutoscaledGroups
-
-	allClusterNodes, err := manager.clusterClient.getNodes()
-	if err != nil {
-		return err
-	}
 	remoteAutoscaledNodes := make(map[string]stackpointio.Node)
-	for _, clusterNode := range allClusterNodes {
-		poolInstanceID := getPoolInstanceIDName(clusterNode)
-		if poolInstanceID != "" && manager.nodeGroups[poolInstanceID] != nil {
-			localNode, ok := manager.nodes[clusterNode.InstanceID]
-			if ok {
-				if localNode.State != clusterNode.State {
-					glog.V(5).Infof("Node state change, nodeID %s, oldState %s, newState %s", clusterNode.InstanceID, localNode.State, clusterNode.State)
+	if len(manager.nodeGroups) > 0 {
+		allClusterNodes, err := manager.clusterClient.getNodes()
+		if err != nil {
+			return err
+		}
+		for _, clusterNode := range allClusterNodes {
+			poolInstanceID := getPoolInstanceIDName(clusterNode)
+			if poolInstanceID != "" && manager.nodeGroups[poolInstanceID] != nil {
+				localNode, ok := manager.nodes[clusterNode.InstanceID]
+				if ok {
+					if localNode.State != clusterNode.State {
+						glog.V(5).Infof("Node state change, nodeID %s, oldState %s, newState %s", clusterNode.InstanceID, localNode.State, clusterNode.State)
+					}
+				} else {
+					glog.V(5).Infof("New node found, nodeID %s, newState %s", clusterNode.InstanceID, clusterNode.State)
 				}
-			} else {
-				glog.V(5).Infof("New node found, nodeID %s, newState %s", clusterNode.InstanceID, clusterNode.State)
+				remoteAutoscaledNodes[clusterNode.InstanceID] = clusterNode
 			}
-			remoteAutoscaledNodes[clusterNode.InstanceID] = clusterNode
 		}
 	}
 	manager.nodes = remoteAutoscaledNodes
 
 	return nil
+}
+
+// getStackpointNodePools gets the set of node pools for this particular cluster, possilbly
+// including nodepools that are autoscaled and possbly pools that are not autoscaled.
+func (manager *NodeManager) getStackpointNodePools() ([]stackpointio.NodePool, error) {
+
+	// Try to load from a configmap but if not available, call the stackpoint api
+	config, err := manager.k8sClient.CoreV1().ConfigMaps(manager.configNamespace).Get(nodePoolConfigName, meta_v1.GetOptions{})
+	if err == nil {
+		nodePoolJSON := config.Data["nodepools"]
+		var pools []stackpointio.NodePool
+		err := json.Unmarshal([]byte(nodePoolJSON), &pools)
+		if err == nil {
+			return pools, nil
+		}
+		glog.V(2).Infof("Error reading ConfigMap %s, %v", nodePoolConfigName, err)
+	} else {
+		glog.V(5).Infof("ConfigMap %s not found %v", nodePoolConfigName, err)
+	}
+
+	return manager.clusterClient.getNodePools()
 }
 
 // IncreaseSize adds nodes to the manager and to the cluster, waits until

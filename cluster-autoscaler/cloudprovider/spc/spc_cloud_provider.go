@@ -285,7 +285,7 @@ type SpcCloudProvider struct {
 }
 
 // BuildSpcCloudProvider builds CloudProvider implementation for stackpointio.
-func BuildSpcCloudProvider(spcClient *StackpointClusterClient, specs []string, resourceLimiter *cloudprovider.ResourceLimiter) (*SpcCloudProvider, error) {
+func BuildSpcCloudProvider(spcClient *StackpointClusterClient, configNamespace string, specs []string, resourceLimiter *cloudprovider.ResourceLimiter) (*SpcCloudProvider, error) {
 	if spcClient == nil {
 		return nil, fmt.Errorf("ClusterClient is nil")
 	}
@@ -294,11 +294,12 @@ func BuildSpcCloudProvider(spcClient *StackpointClusterClient, specs []string, r
 	if err != nil {
 		return nil, fmt.Errorf("Cannot get the in-cluster config, %v", err)
 	}
+
 	k8sClient, err := kubernetes.NewForConfig(config)
 	if err != nil {
 		return nil, fmt.Errorf("Cannot create the in-cluster client, %v", err)
 	}
-	manager := CreateNodeManager(spcClient, k8sClient)
+	manager := CreateNodeManager(spcClient, k8sClient, configNamespace)
 
 	spc := &SpcCloudProvider{
 		spcClient:       spcClient,
@@ -343,8 +344,9 @@ func (spc *SpcCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprovider.N
 		}
 	}
 
+	// Failed to match nodeGroupName autoscaling-spcu22235o-pool-1 of node spcu22235o-worker-1111010
 	glog.V(2).Infof("Failed to match nodeGroupName %s of node %s", nodeGroupName, node.Spec.ExternalID)
-	return nil, fmt.Errorf("Failed to matched nodeGroupName %s", nodeGroupName)
+	return nil, fmt.Errorf("Failed to matched nodeGroupName %s to any nodepool", nodeGroupName)
 }
 
 // Pricing returns pricing model for this cloud provider or error if not available.
