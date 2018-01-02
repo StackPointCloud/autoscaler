@@ -247,7 +247,7 @@ func (sng NodeGroup) Debug() string {
 	if err != nil {
 		msg = err.Error()
 	}
-	return fmt.Sprintf("%s [%s] (%d:%d) (%d) %s", sng.Id(), sng.stackpointID, sng.MinSize(), sng.MaxSize(), target, msg)
+	return fmt.Sprintf("%s [%d] (%d:%d) (%d) %s", sng.Id(), sng.stackpointID, sng.MinSize(), sng.MaxSize(), target, msg)
 }
 
 // Nodes returns a list of all nodes that belong to this node group.
@@ -334,7 +334,6 @@ func (spc *SpcCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprovider.N
 	}
 	if nodeGroupName == "" {
 		glog.V(5).Infof("Node not manageable %s, nodeGroupName is empty", node.Spec.ExternalID)
-		// --> this causes a panic		return nil, nil //&NodeGroup{},
 		return nil, nil // fmt.Errorf("Node not manageable <%s>, nodeGroupName is empty", node.Name)
 	}
 	for _, nodeGroup := range spc.spcManager.nodeGroups {
@@ -345,8 +344,8 @@ func (spc *SpcCloudProvider) NodeGroupForNode(node *apiv1.Node) (cloudprovider.N
 	}
 
 	// Failed to match nodeGroupName autoscaling-spcu22235o-pool-1 of node spcu22235o-worker-1111010
-	glog.V(2).Infof("Failed to match nodeGroupName %s of node %s", nodeGroupName, node.Spec.ExternalID)
-	return nil, fmt.Errorf("Failed to matched nodeGroupName %s to any nodepool", nodeGroupName)
+	glog.V(2).Infof("Failed to match nodeGroupName %s of node %s, marking as empty nodegroup", nodeGroupName, node.Spec.ExternalID)
+	return nil, nil // fmt.Errorf("Failed to matched nodeGroupName %s to any nodepool", nodeGroupName)
 }
 
 // Pricing returns pricing model for this cloud provider or error if not available.
@@ -363,7 +362,7 @@ func (spc *SpcCloudProvider) GetAvailableMachineTypes() ([]string, error) {
 // NewNodeGroup builds a theoretical node group based on the node definition provided. The node group is not automatically
 // created on the cloud provider side. The node group is not returned by NodeGroups() until it is created.
 // Implementation optional.
-func (spc *SpcCloudProvider) NewNodeGroup(machineType string, labels map[string]string, extraResources map[string]resource.Quantity) (cloudprovider.NodeGroup, error) {
+func (spc *SpcCloudProvider) NewNodeGroup(machineType string, labels map[string]string, systemLabels map[string]string, extraResources map[string]resource.Quantity) (cloudprovider.NodeGroup, error) {
 	return nil, cloudprovider.ErrNotImplemented
 }
 
