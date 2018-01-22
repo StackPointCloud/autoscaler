@@ -84,10 +84,10 @@ func (cClient *StackpointClusterClient) getNodePool(nodePoolID int) (stackpointi
 func (cClient *StackpointClusterClient) addNodes(nodePoolID int, requestNodes stackpointio.NodeAdd) ([]stackpointio.Node, error) {
 
 	// use old endpoint
-	newNodes, err := cClient.apiClient.AddNodes(cClient.organization, cClient.id, requestNodes)
+	// newNodes, err := cClient.apiClient.AddNodes(cClient.organization, cClient.id, requestNodes)
 
 	// new nodepool endpoint
-	// newNodes, err := cClient.apiClient.AddNodesToNodePool(cClient.organization, cClient.id, nodePoolID, requestNodes)
+	newNodes, err := cClient.apiClient.AddNodesToNodePool(cClient.organization, cClient.id, nodePoolID, requestNodes)
 
 	if err != nil {
 		return nil, err
